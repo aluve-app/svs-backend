@@ -1,0 +1,14 @@
+{
+  "name": "svs-cloudflare-worker",
+  "description": "Backend SVS (Aluve & GBP) - versi Cloudflare Workers, 100% gratis",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  },
+  "private": true
+}

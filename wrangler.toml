@@ -1,0 +1,10 @@
+name = "svs-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Variabel non-rahasia (boleh terlihat di dashboard) bisa ditaruh di sini.
+# Kredensial RAHASIA (Cloudinary, Firebase Service Account) TIDAK ditaruh
+# di file ini — itu diisi lewat perintah "wrangler secret put" supaya
+# tidak pernah ter-commit ke Git / terlihat orang lain.
+[vars]
+FIREBASE_PROJECT_ID = "aluve-gbp-app-99e38"
