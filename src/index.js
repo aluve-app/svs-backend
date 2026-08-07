@@ -32,6 +32,7 @@ const dashboardService = require('./services/dashboardService');
 const quotationService = require('./services/quotationService');
 const priceCatalogService = require('./services/priceCatalogService');
 const estimatorSettingsService = require('./services/estimatorSettingsService');
+const legacyProjectService = require('./services/legacyProjectService');
 
 // Daftar route: nama endpoint -> handler
 // (requiresRole opsional, dicek SETELAH requireAuth)
@@ -74,7 +75,13 @@ const ROUTES = {
   updatePriceCatalog: { fn: (env, user, data) => priceCatalogService.updatePriceCatalog(env, user, data), roles: ['super_admin'] },
 
   readEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.readEstimatorSettings(env, user, data) },
-  updateEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.updateEstimatorSettings(env, user, data), roles: ['super_admin'] }
+  updateEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.updateEstimatorSettings(env, user, data), roles: ['super_admin'] },
+
+  // --- Legacy Project Estimator (port langsung app lama) ---
+  listLegacyProjects: { fn: (env, user) => legacyProjectService.listLegacyProjects(env, user) },
+  saveLegacyProject: { fn: (env, user, data) => legacyProjectService.saveLegacyProject(env, user, data) },
+  deleteLegacyProject: { fn: (env, user, data) => legacyProjectService.deleteLegacyProject(env, user, data) },
+  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) }
 };
 
 export default {
