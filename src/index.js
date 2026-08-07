@@ -29,6 +29,9 @@ const contactService = require('./services/contactService');
 const photoService = require('./services/photoService');
 const lookupService = require('./services/lookupService');
 const dashboardService = require('./services/dashboardService');
+const quotationService = require('./services/quotationService');
+const priceCatalogService = require('./services/priceCatalogService');
+const estimatorSettingsService = require('./services/estimatorSettingsService');
 
 // Daftar route: nama endpoint -> handler
 // (requiresRole opsional, dicek SETELAH requireAuth)
@@ -58,7 +61,20 @@ const ROUTES = {
 
   readNeedsFollowup: { fn: (env, user) => dashboardService.readNeedsFollowup(env, user) },
   readDashboard: { fn: (env, user) => dashboardService.readDashboard(env, user) },
-  readSummaryDetail: { fn: (env, user, data) => dashboardService.readSummaryDetail(env, user, data) }
+  readSummaryDetail: { fn: (env, user, data) => dashboardService.readSummaryDetail(env, user, data) },
+
+  // --- Project Estimator ---
+  listQuotationQueue: { fn: (env, user, data) => quotationService.listQuotationQueue(env, user, data) },
+  readQuotation: { fn: (env, user, data) => quotationService.readQuotation(env, user, data) },
+  saveQuotation: { fn: (env, user, data) => quotationService.saveQuotation(env, user, data) },
+  markQuotationComplete: { fn: (env, user, data) => quotationService.markQuotationComplete(env, user, data) },
+  createManualQuotation: { fn: (env, user, data) => quotationService.createManualQuotation(env, user, data) },
+
+  readPriceCatalog: { fn: (env, user, data) => priceCatalogService.readPriceCatalog(env, user, data) },
+  updatePriceCatalog: { fn: (env, user, data) => priceCatalogService.updatePriceCatalog(env, user, data), roles: ['super_admin'] },
+
+  readEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.readEstimatorSettings(env, user, data) },
+  updateEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.updateEstimatorSettings(env, user, data), roles: ['super_admin'] }
 };
 
 export default {

@@ -23,7 +23,12 @@ const CONFIG = {
     CONTACTS: 'contacts',
     PROJECT_CONTACTS: 'project_contacts',
     LOOKUPS: 'lookups',
-    ERROR_LOG: 'error_log'
+    ERROR_LOG: 'error_log',
+    // --- Project Estimator ---
+    QUOTATIONS: 'quotations',
+    PRICE_CATALOGS: 'price_catalogs',
+    PRICE_HISTORY: 'price_history',
+    ESTIMATOR_SETTINGS: 'estimator_settings'
   },
 
   // Kode bisnis yang didukung aplikasi ini
@@ -48,6 +53,17 @@ const CONFIG = {
     LOST: 'Lost',
     NEEDS_ESTIMATION: 'Perlu Estimasi Harga', // trigger kirim ke Estimator
     OFFER_READY: 'Penawaran Siap'             // tahap perantara, perlu konfirmasi manual sales
+  },
+
+  // Status quotation di Project Estimator (BEDA dari Pipeline_Stage
+  // project Sales App — quotation.status ini murni status kerja
+  // tim Estimator, dipetakan ke Pipeline_Stage lewat quotationService).
+  QUOTATION_STATUS: {
+    DRAFT: 'draft',
+    SELESAI_DIHITUNG: 'selesai_dihitung',
+    TERKIRIM: 'terkirim',
+    WON: 'won',
+    LOST: 'lost'
   },
 
   API_VERSION: '2.0.0-firebase'
