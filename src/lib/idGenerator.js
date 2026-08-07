@@ -6,10 +6,11 @@
  * lama supaya konsisten kalau nanti data lama & baru pernah
  * perlu dibandingkan/ditelusuri manual:
  *
- *   Project_ID  : PRJ-YYYYMMDD-XXXX
- *   Activity_ID : ACT-YYYYMMDDHHMMSS-XXXX
- *   Photo_ID    : PHT-YYYYMMDDHHMMSS-XXXX
- *   Contact_ID  : CNT-YYYYMMDD-XXXX
+ *   Project_ID    : PRJ-YYYYMMDD-XXXX
+ *   Activity_ID   : ACT-YYYYMMDDHHMMSS-XXXX
+ *   Photo_ID      : PHT-YYYYMMDDHHMMSS-XXXX
+ *   Contact_ID    : CNT-YYYYMMDD-XXXX
+ *   Quotation_ID  : QUO-YYYYMMDD-XXXX
  *
  * Di Firestore, ID ini dipakai LANGSUNG sebagai document ID
  * (bukan auto-id Firestore), supaya tetap human-readable dan
@@ -70,6 +71,10 @@ function generateContactId() {
   return 'CNT-' + formatDateYYYYMMDD(new Date()) + '-' + generateRandomSuffix();
 }
 
+function generateQuotationId() {
+  return 'QUO-' + formatDateYYYYMMDD(new Date()) + '-' + generateRandomSuffix();
+}
+
 /**
  * Membuat ID unik dengan mengecek langsung ke Firestore (retry kalau
  * kebetulan tabrakan — meski secara statistik nyaris mustahil).
@@ -97,5 +102,6 @@ module.exports = {
   generateActivityId,
   generatePhotoId,
   generateContactId,
+  generateQuotationId,
   generateUniqueId
 };
