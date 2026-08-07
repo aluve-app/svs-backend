@@ -11,6 +11,7 @@ const { validateCreateActivity, validateRequiredFields } = require('../lib/valid
 const { requireOwnership } = require('../lib/auth');
 const { generateActivityId, generateUniqueId } = require('../lib/idGenerator');
 const { recalculateProjectHealth } = require('./projectService');
+const { createQuotationFromProject } = require('./quotationService');
 
 const ACT_COL = CONFIG.COLLECTIONS.ACTIVITIES;
 const PROJ_COL = CONFIG.COLLECTIONS.PROJECTS;
@@ -61,6 +62,21 @@ async function createActivity(env, user, data) {
   }
   await updateDoc(env, PROJ_COL, data.project_id, projectUpdates);
   await recalculateProjectHealth(env, data.project_id);
+
+  // --- Integrasi Sales <-> Estimator ---
+  // Begitu Pipeline Stage project diubah jadi "Perlu Estimasi Harga",
+  // otomatis bikin dokumen quotation baru terisi dari data project,
+  // supaya langsung muncul di antrian Project Estimator. Sengaja
+  // dibungkus try/catch terpisah: kalau ini gagal karena sebab apa
+  // pun, penyimpanan activity utama (di atas) TETAP dianggap berhasil
+  // — sales tidak boleh terhalang cuma karena hook ini bermasalah.
+  if (data.pipeline_stage === CONFIG.PIPELINE_STAGE.NEEDS_ESTIMATION) {
+    try {
+      await createQuotationFromProject(env, { ...project, project_id: data.project_id }, data.project_id);
+    } catch (err) {
+      console.error('Gagal membuat quotation otomatis untuk project ' + data.project_id + ':', err);
+    }
+  }
 
   return successResponse({ activity_id: activityId }, 'Aktivitas berhasil disimpan');
 }
