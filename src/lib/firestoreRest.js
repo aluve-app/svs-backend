@@ -74,6 +74,19 @@ async function updateDoc(env, collection, id, data) {
 }
 
 /**
+ * Menghapus 1 dokumen (setara .doc(id).delete()).
+ */
+async function deleteDoc(env, collection, id) {
+  const headers = await authHeader(env);
+  const res = await fetch(`${baseUrl(env.FIREBASE_PROJECT_ID)}/${collection}/${id}`, {
+    method: 'DELETE',
+    headers
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Gagal menghapus ${collection}/${id}: ` + (await res.text()));
+  return true;
+}
+
+/**
  * Menambah dokumen baru dengan ID otomatis dari Firestore (setara .add()).
  */
 async function addDoc(env, collection, data) {
@@ -137,4 +150,4 @@ async function queryDocs(env, collection, options = {}) {
     .map((r) => fromFirestoreDocument(r.document));
 }
 
-module.exports = { getDoc, setDoc, updateDoc, addDoc, queryDocs };
+module.exports = { getDoc, setDoc, updateDoc, deleteDoc, addDoc, queryDocs };
