@@ -33,6 +33,8 @@ const quotationService = require('./services/quotationService');
 const priceCatalogService = require('./services/priceCatalogService');
 const estimatorSettingsService = require('./services/estimatorSettingsService');
 const legacyProjectService = require('./services/legacyProjectService');
+const managerService = require('./services/managerService');
+const userService = require('./services/userService');
 
 // Daftar route: nama endpoint -> handler
 // (requiresRole opsional, dicek SETELAH requireAuth)
@@ -81,7 +83,25 @@ const ROUTES = {
   listLegacyProjects: { fn: (env, user) => legacyProjectService.listLegacyProjects(env, user) },
   saveLegacyProject: { fn: (env, user, data) => legacyProjectService.saveLegacyProject(env, user, data) },
   deleteLegacyProject: { fn: (env, user, data) => legacyProjectService.deleteLegacyProject(env, user, data) },
-  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) }
+  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) },
+
+  // --- Manager Dashboard (BARU) ---
+  // Semua route ini khusus manager/super_admin — Sales App tidak pernah memanggilnya.
+  readManagerOverview: { fn: (env, user, data) => managerService.readManagerOverview(env, user, data), roles: ['manager', 'super_admin'] },
+  readSalesPerformance: { fn: (env, user, data) => managerService.readSalesPerformance(env, user, data), roles: ['manager', 'super_admin'] },
+  readTrendData: { fn: (env, user, data) => managerService.readTrendData(env, user, data), roles: ['manager', 'super_admin'] },
+  readActivityLog: { fn: (env, user, data) => managerService.readActivityLog(env, user, data), roles: ['manager', 'super_admin'] },
+  readSalesList: { fn: (env, user, data) => managerService.readSalesList(env, user, data), roles: ['manager', 'super_admin'] },
+  readProjectExplorer: { fn: (env, user, data) => managerService.readProjectExplorer(env, user, data), roles: ['manager', 'super_admin'] },
+
+  // --- Kelola Akun User (BARU) ---
+  // Semua route ini khusus super_admin — "tier paling tinggi", sama seperti
+  // aturan edit Price Catalog/Estimator Settings di Estimator.
+  createUserAccount: { fn: (env, user, data) => userService.createUserAccount(env, user, data), roles: ['super_admin'] },
+  listUserAccounts: { fn: (env, user, data) => userService.listUserAccounts(env, user, data), roles: ['super_admin'] },
+  updateUserRole: { fn: (env, user, data) => userService.updateUserRole(env, user, data), roles: ['super_admin'] },
+  setUserStatus: { fn: (env, user, data) => userService.setUserStatus(env, user, data), roles: ['super_admin'] },
+  resetUserPassword: { fn: (env, user, data) => userService.resetUserPassword(env, user, data), roles: ['super_admin'] }
 };
 
 export default {
