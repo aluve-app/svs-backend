@@ -78,6 +78,7 @@ const ROUTES = {
 
   readEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.readEstimatorSettings(env, user, data) },
   updateEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.updateEstimatorSettings(env, user, data), roles: ['super_admin'] },
+  uploadEstimatorLogo: { fn: (env, user, data) => estimatorSettingsService.uploadEstimatorLogo(env, user, data), roles: ['super_admin'] },
 
   // --- Legacy Project Estimator (port langsung app lama) ---
   listLegacyProjects: { fn: (env, user) => legacyProjectService.listLegacyProjects(env, user) },
