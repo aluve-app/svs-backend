@@ -24,15 +24,20 @@ const PROJ_COL = CONFIG.COLLECTIONS.PROJECTS;
 const ACT_COL = CONFIG.COLLECTIONS.ACTIVITIES;
 const USERS_COL = CONFIG.COLLECTIONS.USERS;
 
-/** Tentukan business_id efektif sesuai role — inti dari switcher bisnis */
+/** Tentukan business_id efektif sesuai role/akses — inti dari switcher bisnis */
 function resolveBusinessId(user, data) {
-  if (user.role === 'super_admin' && data.business_id) return data.business_id;
+  if (!data.business_id) return user.business_id;
+  if (user.role === 'super_admin') return data.business_id;
+  // Akun non-super_admin dengan akses multi-bisnis (business_ids berisi >1
+  // bisnis) boleh pilih business_id manapun yang ada di daftar aksesnya.
+  const allowed = Array.isArray(user.business_ids) ? user.business_ids : [user.business_id];
+  if (allowed.includes(data.business_id)) return data.business_id;
   return user.business_id;
 }
 
 /** Ambil semua project, activity, dan daftar sales (dari users) untuk 1 business_id */
 async function fetchManagerScopedData(env, businessId) {
-  const [projects, activities, salesUsers] = await Promise.all([
+  const [projectsRaw, activities, salesUsers] = await Promise.all([
     queryDocs(env, PROJ_COL, { where: [{ field: 'business_id', value: businessId }] }),
     queryDocs(env, ACT_COL, { where: [{ field: 'business_id', value: businessId }] }),
     queryDocs(env, USERS_COL, {
@@ -42,6 +47,11 @@ async function fetchManagerScopedData(env, businessId) {
       ]
     })
   ]);
+
+  // Project yang sudah di-soft-delete (fitur "Hapus Project" di Admin
+  // Console) TIDAK ikut dihitung di Overview/Explorer/Performa/Log —
+  // sama seperti perilaku searchProject/filterProject di Sales App.
+  const projects = projectsRaw.filter((p) => !p.is_deleted);
 
   const salesNameByUid = {};
   salesUsers.forEach((s) => { salesNameByUid[s.id] = s.name; });

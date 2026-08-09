@@ -6,28 +6,38 @@
  * dilakukan manual lewat Firestore Console + script). Semua fungsi
  * di sini KHUSUS super_admin (dicek di index.js lewat `roles`).
  *
- * Membuat/menonaktifkan akun memakai Identity Toolkit Admin REST API
- * (bagian dari Google Identity Platform) — endpoint resmi yang sama
- * yang dipakai firebase-admin SDK secara internal. Tidak butuh SDK
- * khusus, cukup access token OAuth2 yang sudah kita punya — googleAuth.js
- * memang sudah minta scope 'identitytoolkit' sejak awal proyek ini,
- * jadi tidak perlu setup kredensial baru.
+ * Membuat/menonaktifkan/menghapus akun memakai Identity Toolkit Admin
+ * REST API (bagian dari Google Identity Platform) — endpoint resmi
+ * yang sama yang dipakai firebase-admin SDK secara internal. Tidak
+ * butuh SDK khusus, cukup access token OAuth2 yang sudah kita punya —
+ * googleAuth.js memang sudah minta scope 'identitytoolkit' sejak awal
+ * proyek ini, jadi tidak perlu setup kredensial baru.
  *
  * PENTING soal password: setiap akun baru diberi password SEMENTARA
  * yang di-generate acak oleh server, dan HANYA dikembalikan SATU KALI
  * di response saat itu juga (tidak pernah disimpan ke Firestore).
  * Anto salin manual lalu bagikan ke orangnya.
+ *
+ * AKSES MULTI-BISNIS: field `business_ids` (array) adalah daftar
+ * bisnis yang boleh diakses akun ini. Field `business_id` (tunggal,
+ * lama) TETAP disimpan sebagai bisnis utama/default = business_ids[0]
+ * — supaya semua service LAIN yang masih baca `user.business_id`
+ * langsung (project/activity/contact/photo/lookup/dsb, yang jumlahnya
+ * banyak dan belum semua disentuh sesi ini) tetap jalan tanpa perlu
+ * diubah satu-satu. Role `estimator` DIKUNCI cuma boleh akses "aluve"
+ * (Estimator memang cuma ada untuk Aluve sejauh ini).
  * ============================================================
  */
 
 const { CONFIG } = require('../config');
-const { getDoc, setDoc, updateDoc, queryDocs } = require('../lib/firestoreRest');
+const { getDoc, setDoc, updateDoc, deleteDoc, queryDocs } = require('../lib/firestoreRest');
 const { getGoogleAccessToken } = require('../lib/googleAuth');
 const { successResponse, throwError } = require('../lib/responseHelper');
 const { validateRequiredFields } = require('../lib/validator');
 
 const USERS_COL = CONFIG.COLLECTIONS.USERS;
 const VALID_ROLES = ['sales', 'estimator', 'manager', 'super_admin'];
+const VALID_BUSINESS_IDS = Object.values(CONFIG.BUSINESS);
 
 function generateTempPassword() {
   // 10 karakter acak (huruf besar/kecil/angka, tanpa karakter mirip
@@ -36,6 +46,28 @@ function generateTempPassword() {
   let pw = '';
   for (let i = 0; i < 10; i++) pw += chars.charAt(Math.floor(Math.random() * chars.length));
   return pw;
+}
+
+/**
+ * Validasi & normalisasi daftar business_ids sesuai role.
+ * - Role 'estimator' DIPAKSA jadi ['aluve'] apapun input-nya (Estimator
+ *   belum ada untuk GBP).
+ * - Role lain: minimal 1 bisnis, semua harus dikenal (aluve/gbp).
+ */
+function normalizeBusinessIds(role, businessIdsInput, fallbackSingle) {
+  let ids = Array.isArray(businessIdsInput) && businessIdsInput.length > 0
+    ? businessIdsInput
+    : (fallbackSingle ? [fallbackSingle] : []);
+
+  ids = [...new Set(ids)].filter(Boolean);
+
+  if (role === 'estimator') return ['aluve'];
+
+  if (ids.length === 0) throwError('Minimal 1 bisnis harus dipilih', 'invalid-argument');
+  ids.forEach((id) => {
+    if (!VALID_BUSINESS_IDS.includes(id)) throwError('business_id tidak valid: ' + id, 'invalid-argument');
+  });
+  return ids;
 }
 
 async function identityToolkitCall(env, path, body) {
@@ -59,8 +91,10 @@ async function identityToolkitCall(env, path, body) {
 }
 
 /**
- * @param {Object} data - { name, email, role, business_id, sales_code? }
- * Membuat akun Firebase Authentication BARU + dokumen users di Firestore.
+ * @param {Object} data - { name, email, role, business_id, business_ids?, sales_code? }
+ * `business_ids` (array) opsional — kalau tidak diisi, dianggap 1 bisnis
+ * saja (business_id lama). Membuat akun Firebase Authentication BARU +
+ * dokumen users di Firestore.
  */
 async function createUserAccount(env, user, data) {
   validateRequiredFields(data, ['name', 'email', 'role', 'business_id']);
@@ -68,9 +102,7 @@ async function createUserAccount(env, user, data) {
   if (!VALID_ROLES.includes(data.role)) {
     throwError('Role tidak valid: ' + data.role, 'invalid-argument');
   }
-  if (!Object.values(CONFIG.BUSINESS).includes(data.business_id)) {
-    throwError('business_id tidak valid: ' + data.business_id, 'invalid-argument');
-  }
+  const businessIds = normalizeBusinessIds(data.role, data.business_ids, data.business_id);
 
   // Cek cepat duplikat email di koleksi users (bukan pengganti validasi
   // resmi Identity Toolkit di bawah, sekadar pesan error yang lebih jelas)
@@ -96,7 +128,8 @@ async function createUserAccount(env, user, data) {
     name: data.name,
     email: data.email,
     role: data.role,
-    business_id: data.business_id,
+    business_id: businessIds[0], // bisnis utama/default — dipakai semua service lama
+    business_ids: businessIds,   // daftar lengkap bisnis yang boleh diakses
     sales_code: data.sales_code || '',
     status: 'Aktif',
     date_created: now,
@@ -113,30 +146,46 @@ async function createUserAccount(env, user, data) {
 
 /** @param {Object} data - { business_id? } — kosongkan untuk lihat semua bisnis */
 async function listUserAccounts(env, user, data) {
-  const where = [];
-  if (data && data.business_id) where.push({ field: 'business_id', value: data.business_id });
-  const rows = await queryDocs(env, USERS_COL, { where });
-  const result = rows
-    .map((r) => ({ uid: r.id, ...r }))
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const rows = await queryDocs(env, USERS_COL, { where: [] });
+  let result = rows.map((r) => ({
+    uid: r.id,
+    ...r,
+    business_ids: Array.isArray(r.business_ids) && r.business_ids.length > 0 ? r.business_ids : [r.business_id]
+  }));
+
+  // Filter di memori (bukan di query Firestore) karena business_ids array
+  // butuh operator "array-contains" yang lebih ribet lewat REST — datanya
+  // sedikit (puluhan akun), jadi filter di sini cukup cepat.
+  if (data && data.business_id) {
+    result = result.filter((r) => r.business_ids.includes(data.business_id));
+  }
+
+  result.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return successResponse(result, result.length + ' akun ditemukan');
 }
 
-/** @param {Object} data - { uid, role?, business_id?, sales_code?, name? } */
+/** @param {Object} data - { uid, role?, business_id?, business_ids?, sales_code?, name? } */
 async function updateUserRole(env, user, data) {
   validateRequiredFields(data, ['uid']);
   const existing = await getDoc(env, USERS_COL, data.uid);
   if (!existing) throwError('Akun tidak ditemukan', 'not-found');
 
   const updates = {};
+  const nextRole = data.role || existing.role;
   if (data.role) {
     if (!VALID_ROLES.includes(data.role)) throwError('Role tidak valid: ' + data.role, 'invalid-argument');
     updates.role = data.role;
   }
-  if (data.business_id) {
-    if (!Object.values(CONFIG.BUSINESS).includes(data.business_id)) throwError('business_id tidak valid', 'invalid-argument');
-    updates.business_id = data.business_id;
+
+  // Kalau role dan/atau business_ids ikut diubah, normalisasi ulang
+  // (termasuk guard rail: role estimator dipaksa cuma "aluve")
+  if (data.business_ids || data.business_id || data.role) {
+    const inputIds = data.business_ids || (data.business_id ? [data.business_id] : existing.business_ids || [existing.business_id]);
+    const businessIds = normalizeBusinessIds(nextRole, inputIds, existing.business_id);
+    updates.business_id = businessIds[0];
+    updates.business_ids = businessIds;
   }
+
   if (data.sales_code !== undefined) updates.sales_code = data.sales_code;
   if (data.name) updates.name = data.name;
 
@@ -194,4 +243,28 @@ async function resetUserPassword(env, user, data) {
   );
 }
 
-module.exports = { createUserAccount, listUserAccounts, updateUserRole, setUserStatus, resetUserPassword };
+/**
+ * Hapus akun PERMANEN — baik dari Firebase Authentication (tidak bisa
+ * login lagi sama sekali) maupun dokumennya di Firestore. TIDAK BISA
+ * DIBATALKAN. Project/activity yang pernah dibuat akun ini TETAP ada
+ * (tidak ikut terhapus) — cuma akun login-nya yang hilang, supaya
+ * histori data tidak rusak.
+ */
+async function deleteUserAccount(env, user, data) {
+  validateRequiredFields(data, ['uid']);
+  if (data.uid === user.uid) {
+    throwError('Tidak bisa menghapus akun sendiri.', 'invalid-argument');
+  }
+
+  const existing = await getDoc(env, USERS_COL, data.uid);
+  if (!existing) throwError('Akun tidak ditemukan', 'not-found');
+
+  await identityToolkitCall(env, '/accounts:delete', { localId: data.uid });
+  await deleteDoc(env, USERS_COL, data.uid);
+
+  return successResponse({ uid: data.uid }, 'Akun berhasil dihapus permanen');
+}
+
+module.exports = {
+  createUserAccount, listUserAccounts, updateUserRole, setUserStatus, resetUserPassword, deleteUserAccount
+};
