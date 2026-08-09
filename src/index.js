@@ -41,6 +41,7 @@ const userService = require('./services/userService');
 const ROUTES = {
   createProject: { fn: (env, user, data) => projectService.createProject(env, user, data) },
   updateProject: { fn: (env, user, data) => projectService.updateProject(env, user, data) },
+  deleteProject: { fn: (env, user, data) => projectService.deleteProject(env, user, data) },
   readProject: { fn: (env, user, data) => projectService.readProject(env, user, data) },
   searchProject: { fn: (env, user, data) => projectService.searchProject(env, user, data) },
   filterProject: { fn: (env, user, data) => projectService.filterProject(env, user, data) },
