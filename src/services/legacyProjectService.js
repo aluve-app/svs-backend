@@ -124,13 +124,21 @@ async function notifySalesQuotationSent(env, user, data) {
     updated_at: new Date()
   }));
 
+  const { updateDoc } = require('../lib/firestoreRest');
   const project = await getDoc(env, CONFIG.COLLECTIONS.PROJECTS, doc.project_id);
   if (project) {
-    const { updateDoc } = require('../lib/firestoreRest');
-    await updateDoc(env, CONFIG.COLLECTIONS.PROJECTS, doc.project_id, {
+    const projectUpdates = {
       pipeline_stage: CONFIG.PIPELINE_STAGE.OFFER_READY,
       date_last_activity: new Date()
-    });
+    };
+    // Isi otomatis "Nilai Estimasi Project" dari Grand Total quotation
+    // (dikirim frontend, sudah dihitung pakai Calculator yang sama persis
+    // dipakai untuk export PDF/Excel) — sales tidak perlu ketik manual lagi
+    // begitu quotation resmi dari Estimator sudah ada.
+    if (typeof data.estimated_value === 'number' && Number.isFinite(data.estimated_value)) {
+      projectUpdates.estimated_value = data.estimated_value;
+    }
+    await updateDoc(env, CONFIG.COLLECTIONS.PROJECTS, doc.project_id, projectUpdates);
   }
 
   return successResponse({ notified: true }, 'Sales App sudah diberi tahu quotation ini terkirim');
