@@ -103,7 +103,8 @@ const ROUTES = {
   listUserAccounts: { fn: (env, user, data) => userService.listUserAccounts(env, user, data), roles: ['super_admin'] },
   updateUserRole: { fn: (env, user, data) => userService.updateUserRole(env, user, data), roles: ['super_admin'] },
   setUserStatus: { fn: (env, user, data) => userService.setUserStatus(env, user, data), roles: ['super_admin'] },
-  resetUserPassword: { fn: (env, user, data) => userService.resetUserPassword(env, user, data), roles: ['super_admin'] }
+  resetUserPassword: { fn: (env, user, data) => userService.resetUserPassword(env, user, data), roles: ['super_admin'] },
+  deleteUserAccount: { fn: (env, user, data) => userService.deleteUserAccount(env, user, data), roles: ['super_admin'] }
 };
 
 export default {
