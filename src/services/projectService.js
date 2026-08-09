@@ -11,7 +11,7 @@
 const { CONFIG } = require('../config');
 const { getDoc, setDoc, updateDoc, queryDocs } = require('../lib/firestoreRest');
 const { successResponse, throwError } = require('../lib/responseHelper');
-const { validateCreateProject, validateUpdateProject } = require('../lib/validator');
+const { validateCreateProject, validateUpdateProject, validateRequiredFields } = require('../lib/validator');
 const { requireOwnership } = require('../lib/auth');
 const { generateProjectId, generateUniqueId } = require('../lib/idGenerator');
 
@@ -81,6 +81,33 @@ async function updateProject(env, user, data) {
   return successResponse({ project_id: data.project_id }, 'Project berhasil diperbarui');
 }
 
+/**
+ * Hapus project (SOFT DELETE) — ditandai is_deleted, BUKAN dihapus
+ * sungguhan dari Firestore. Tujuannya supaya sales bisa "buang" project
+ * yang salah input/dibatalkan, tapi datanya masih bisa dipulihkan kalau
+ * ternyata keliru — cuma super_admin yang boleh hapus permanen (fitur
+ * "Sampah" di Manager Dashboard, menyusul di sesi terpisah).
+ *
+ * Aturan akses SAMA seperti updateProject: sales cuma boleh hapus
+ * project miliknya sendiri (requireOwnership), manager/super_admin bebas.
+ */
+async function deleteProject(env, user, data) {
+  validateRequiredFields(data, ['project_id']);
+
+  const existing = await getDoc(env, COL, data.project_id);
+  if (!existing) throwError('Project tidak ditemukan: ' + data.project_id, 'not-found');
+
+  requireOwnership(user, existing.sales_uid);
+
+  await updateDoc(env, COL, data.project_id, {
+    is_deleted: true,
+    deleted_at: new Date(),
+    deleted_by: user.uid
+  });
+
+  return successResponse({ project_id: data.project_id }, 'Project dipindahkan ke Sampah');
+}
+
 async function readProject(env, user, data) {
   if (!data.project_id) throwError('project_id wajib diisi', 'invalid-argument');
   const doc = await getDoc(env, COL, data.project_id);
@@ -100,6 +127,7 @@ async function searchProject(env, user, data) {
   const rows = await queryDocs(env, COL, { where: [{ field: 'business_id', value: user.business_id }] });
 
   const results = rows.filter((row) => {
+    if (row.is_deleted) return false; // project di Sampah tidak muncul di hasil pencarian normal
     const matchKeyword =
       String(row.project_name).toLowerCase().includes(keyword) ||
       String(row.location_address).toLowerCase().includes(keyword);
@@ -119,6 +147,7 @@ async function filterProject(env, user, data) {
   const rows = await queryDocs(env, COL, { where });
 
   const results = rows.filter((row) => {
+    if (row.is_deleted) return false; // project di Sampah tidak muncul di daftar normal
     let match = true;
     if (data.product_type) match = match && String(row.product_type).includes(data.product_type);
     if (data.lead_source) match = match && row.lead_source === data.lead_source;
@@ -154,4 +183,4 @@ async function recalculateProjectHealth(env, projectId) {
   await updateDoc(env, COL, projectId, { health_status: healthStatus });
 }
 
-module.exports = { createProject, updateProject, readProject, searchProject, filterProject, recalculateProjectHealth };
+module.exports = { createProject, updateProject, deleteProject, readProject, searchProject, filterProject, recalculateProjectHealth };
