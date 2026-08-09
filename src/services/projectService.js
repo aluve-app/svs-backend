@@ -67,7 +67,14 @@ async function updateProject(env, user, data) {
   const updatableFields = [
     'project_name', 'location_address', 'location_lat', 'location_lng',
     'product_type', 'project_category', 'construction_stage',
-    'estimated_scale', 'estimated_value', 'competitor_name'
+    'estimated_scale', 'competitor_name'
+    // 'estimated_value' SENGAJA tidak diikutkan (Ags 2026) — angka ini
+    // cuma boleh diisi otomatis dari Project Estimator lewat
+    // notifySalesQuotationSent (legacyProjectService.js), yang menulis
+    // langsung ke Firestore, BUKAN lewat fungsi updateProject ini. Kalau
+    // ada yang kirim field ini ke endpoint /updateProject, diam-diam
+    // diabaikan di sini (bukan error) supaya request lain di dalamnya
+    // tetap jalan normal.
   ];
 
   const updates = {};
