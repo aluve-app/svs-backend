@@ -25,14 +25,16 @@ const { successResponse, throwError } = require('../lib/responseHelper');
 const ACT_COL = CONFIG.COLLECTIONS.ACTIVITIES;
 const PROJ_COL = CONFIG.COLLECTIONS.PROJECTS;
 
-/** Ambil semua project & activity dalam scope user (business + kepemilikan kalau sales) */
+/** Ambil semua project & activity dalam scope user (business + SELALU dibatasi ke akun sendiri) */
 async function fetchScopedData(env, user) {
-  const projectWhere = [{ field: 'business_id', value: user.business_id }];
-  const activityWhere = [{ field: 'business_id', value: user.business_id }];
-  if (user.role === 'sales') {
-    projectWhere.push({ field: 'sales_uid', value: user.uid });
-    activityWhere.push({ field: 'sales_uid', value: user.uid });
-  }
+  const projectWhere = [
+    { field: 'business_id', value: user.business_id },
+    { field: 'sales_uid', value: user.uid }
+  ];
+  const activityWhere = [
+    { field: 'business_id', value: user.business_id },
+    { field: 'sales_uid', value: user.uid }
+  ];
 
   const [projects, activities] = await Promise.all([
     queryDocs(env, PROJ_COL, { where: projectWhere }),

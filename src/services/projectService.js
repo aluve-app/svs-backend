@@ -133,23 +133,33 @@ async function searchProject(env, user, data) {
   const keyword = String(data.keyword).toLowerCase();
   const rows = await queryDocs(env, COL, { where: [{ field: 'business_id', value: user.business_id }] });
 
+  // Sales App SELALU dibatasi ke project milik akun yang login sendiri —
+  // berlaku untuk SEMUA role (sales/manager/super_admin), tidak ada
+  // pengecualian. Melihat data lintas-anggota tim itu hak khusus Manager
+  // Dashboard (lewat managerService.js yang endpoint-nya terpisah), bukan
+  // Sales App. Sengaja TIDAK lagi mengandalkan data.sales_uid dari client
+  // supaya tidak bisa dilewati (bypass) lewat panggilan API langsung.
   const results = rows.filter((row) => {
     if (row.is_deleted) return false; // project di Sampah tidak muncul di hasil pencarian normal
+    if (row.sales_uid !== user.uid) return false;
     const matchKeyword =
       String(row.project_name).toLowerCase().includes(keyword) ||
       String(row.location_address).toLowerCase().includes(keyword);
-    const matchSales = data.sales_uid ? row.sales_uid === data.sales_uid : true;
     const matchLeadSource = data.lead_source ? row.lead_source === data.lead_source : true;
-    return matchKeyword && matchSales && matchLeadSource;
+    return matchKeyword && matchLeadSource;
   }).map((row) => ({ project_id: row.id, ...row }));
 
   return successResponse(results, results.length + ' project ditemukan');
 }
 
 async function filterProject(env, user, data) {
-  const where = [{ field: 'business_id', value: user.business_id }];
+  // Sama seperti searchProject di atas: SELALU dibatasi ke akun sendiri,
+  // untuk semua role, tidak bisa dilewati dari client.
+  const where = [
+    { field: 'business_id', value: user.business_id },
+    { field: 'sales_uid', value: user.uid }
+  ];
   if (data.pipeline_stage) where.push({ field: 'pipeline_stage', value: data.pipeline_stage });
-  if (data.sales_uid) where.push({ field: 'sales_uid', value: data.sales_uid });
 
   const rows = await queryDocs(env, COL, { where });
 
