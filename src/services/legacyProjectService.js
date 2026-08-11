@@ -15,11 +15,21 @@
  * yang snake_case. Field snake_case (client_name, dst) tetap
  * disinkronkan sebagai "ringkasan" supaya tetap kebaca dari
  * quotationService.js/Sales App/dashboard nanti.
+ *
+ * FITUR SAMPAH (soft-delete) — ditambahkan supaya konsisten dengan
+ * pola yang sudah dipakai di project Sales App (projectService.js):
+ * field `is_deleted`/`deleted_at`/`deleted_by` di level dokumen
+ * quotation (BUKAN di dalam legacy_project_data, supaya tidak ikut
+ * campur dengan struktur app lama yang harus tetap apa adanya).
+ * "Hapus" dari Estimator sekarang otomatis jadi soft-delete — quotation
+ * dipindah ke Sampah (bisa dilihat & dikelola dari Manager Dashboard →
+ * Admin Console → Kelola Project → Sampah, bareng dengan Sampah project
+ * Sales App), BUKAN langsung hilang permanen seperti sebelumnya.
  * ============================================================
  */
 
 const { CONFIG } = require('../config');
-const { getDoc, setDoc, deleteDoc, queryDocs } = require('../lib/firestoreRest');
+const { getDoc, setDoc, updateDoc, deleteDoc, queryDocs } = require('../lib/firestoreRest');
 const { successResponse, throwError } = require('../lib/responseHelper');
 const { validateRequiredFields } = require('../lib/validator');
 
@@ -54,13 +64,19 @@ function toLegacyProject(doc) {
   };
 }
 
-/** Daftar seluruh "Project" (quotation) milik business_id user — dipetakan ke bentuk app lama. */
+/**
+ * Daftar seluruh "Project" (quotation) milik business_id user — dipetakan
+ * ke bentuk app lama. Quotation yang sudah di-soft-delete (is_deleted=true)
+ * TIDAK ikut muncul di sini — sama seperti project Sales App yang sudah
+ * dihapus tidak muncul di Sales App/Dashboard manapun.
+ */
 async function listLegacyProjects(env, user) {
   const rows = await queryDocs(env, COL, {
     where: [{ field: 'business_id', value: user.business_id }],
     orderBy: { field: 'updated_at', direction: 'desc' }
   });
-  return successResponse(rows.map(toLegacyProject), rows.length + ' project ditemukan');
+  const visible = rows.filter((r) => !r.is_deleted);
+  return successResponse(visible.map(toLegacyProject), visible.length + ' project ditemukan');
 }
 
 /**
@@ -93,17 +109,78 @@ async function saveLegacyProject(env, user, data) {
     legacy_project_data: project,
     created_by: (existing && existing.created_by) || user.uid,
     created_at: (existing && existing.created_at) || now,
-    updated_at: now
+    updated_at: now,
+    // Field Sampah dipertahankan apa adanya kalau sudah ada (jaga-jaga
+    // kalau suatu saat ada alur simpan ulang ke quotation yang statusnya
+    // sedang di Sampah — seharusnya tidak terjadi dari UI normal, tapi
+    // aman kalau tetap dijaga di sini).
+    is_deleted: (existing && existing.is_deleted) || false,
+    deleted_at: (existing && existing.deleted_at) || null,
+    deleted_by: (existing && existing.deleted_by) || null
   };
 
   await setDoc(env, COL, project.projectId, doc);
   return successResponse({ project_id: project.projectId }, 'Project berhasil disimpan');
 }
 
+/**
+ * Hapus quotation (SOFT DELETE) — dipindah ke Sampah, TIDAK langsung
+ * hilang dari Firestore. Sama seperti deleteProject di Sales App.
+ */
 async function deleteLegacyProject(env, user, data) {
   validateRequiredFields(data, ['project_id']);
+
+  const existing = await getDoc(env, COL, data.project_id);
+  if (!existing) throwError('Project tidak ditemukan: ' + data.project_id, 'not-found');
+
+  await updateDoc(env, COL, data.project_id, {
+    is_deleted: true,
+    deleted_at: new Date(),
+    deleted_by: user.uid
+  });
+
+  return successResponse({ project_id: data.project_id }, 'Project dipindahkan ke Sampah');
+}
+
+/**
+ * Pulihkan quotation dari Sampah. Khusus super_admin (dicek di index.js) —
+ * dikelola dari Manager Dashboard, bukan dari Estimator sendiri (Estimator
+ * belum punya halaman Sampah-nya sendiri).
+ */
+async function restoreLegacyProject(env, user, data) {
+  validateRequiredFields(data, ['project_id']);
+
+  const existing = await getDoc(env, COL, data.project_id);
+  if (!existing) throwError('Project tidak ditemukan: ' + data.project_id, 'not-found');
+  if (!existing.is_deleted) throwError('Project ini tidak sedang berada di Sampah', 'invalid-argument');
+
+  await updateDoc(env, COL, data.project_id, {
+    is_deleted: false,
+    deleted_at: null,
+    deleted_by: null,
+    restored_at: new Date(),
+    restored_by: user.uid
+  });
+
+  return successResponse({ project_id: data.project_id }, 'Project berhasil dipulihkan dari Sampah');
+}
+
+/**
+ * Hapus quotation PERMANEN dari Firestore — TIDAK BISA DIBATALKAN. Hanya
+ * bisa dilakukan pada quotation yang SUDAH ada di Sampah. Khusus super_admin.
+ * TIDAK ada cascading delete (quotation tidak punya sub-koleksi terpisah
+ * seperti project Sales App — semua datanya menyatu di 1 dokumen lewat
+ * legacy_project_data), jadi cukup hapus 1 dokumen ini saja.
+ */
+async function permanentlyDeleteLegacyProject(env, user, data) {
+  validateRequiredFields(data, ['project_id']);
+
+  const existing = await getDoc(env, COL, data.project_id);
+  if (!existing) throwError('Project tidak ditemukan: ' + data.project_id, 'not-found');
+  if (!existing.is_deleted) throwError('Project harus dipindahkan ke Sampah dulu sebelum dihapus permanen', 'invalid-argument');
+
   await deleteDoc(env, COL, data.project_id);
-  return successResponse({ project_id: data.project_id }, 'Project berhasil dihapus');
+  return successResponse({ project_id: data.project_id }, 'Project dihapus permanen');
 }
 
 /**
@@ -124,7 +201,6 @@ async function notifySalesQuotationSent(env, user, data) {
     updated_at: new Date()
   }));
 
-  const { updateDoc } = require('../lib/firestoreRest');
   const project = await getDoc(env, CONFIG.COLLECTIONS.PROJECTS, doc.project_id);
   if (project) {
     const projectUpdates = {
@@ -144,4 +220,7 @@ async function notifySalesQuotationSent(env, user, data) {
   return successResponse({ notified: true }, 'Sales App sudah diberi tahu quotation ini terkirim');
 }
 
-module.exports = { listLegacyProjects, saveLegacyProject, deleteLegacyProject, notifySalesQuotationSent };
+module.exports = {
+  listLegacyProjects, saveLegacyProject, deleteLegacyProject,
+  restoreLegacyProject, permanentlyDeleteLegacyProject, notifySalesQuotationSent
+};

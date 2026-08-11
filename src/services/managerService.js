@@ -23,6 +23,7 @@ const { successResponse, throwError } = require('../lib/responseHelper');
 const PROJ_COL = CONFIG.COLLECTIONS.PROJECTS;
 const ACT_COL = CONFIG.COLLECTIONS.ACTIVITIES;
 const USERS_COL = CONFIG.COLLECTIONS.USERS;
+const QUOTATIONS_COL = CONFIG.COLLECTIONS.QUOTATIONS;
 
 /** Tentukan business_id efektif sesuai role/akses — inti dari switcher bisnis */
 function resolveBusinessId(user, data) {
@@ -455,6 +456,42 @@ async function readDeletedProjects(env, user, data) {
   return successResponse(result, result.length + ' project di Sampah');
 }
 
+/**
+ * Daftar quotation Estimator yang sudah di-soft-delete — sama konsepnya
+ * dengan readDeletedProjects, tapi bacanya dari koleksi `quotations`
+ * (Project Estimator), BUKAN `projects` (Sales App). Ditampilkan
+ * bersebelahan di halaman Sampah yang sama supaya super_admin punya 1
+ * tempat terpusat, walau sumber datanya beda koleksi/skema.
+ */
+async function readDeletedQuotations(env, user, data) {
+  const businessId = resolveBusinessId(user, data);
+
+  const [quotationsRaw, allUsers] = await Promise.all([
+    queryDocs(env, QUOTATIONS_COL, {
+      where: [
+        { field: 'business_id', value: businessId },
+        { field: 'is_deleted', value: true }
+      ]
+    }),
+    queryDocs(env, USERS_COL, { where: [{ field: 'business_id', value: businessId }] })
+  ]);
+
+  const nameByUid = {};
+  allUsers.forEach((u) => { nameByUid[u.id] = u.name; });
+
+  const result = quotationsRaw.map((q) => ({
+    quotation_id: q.id,
+    project_name: q.project_name || q.client_name || '(Tanpa nama)',
+    client_name: q.client_name,
+    quotation_number: q.quotation_number,
+    status: q.status,
+    deleted_at: q.deleted_at,
+    deleted_by_name: nameByUid[q.deleted_by] || q.deleted_by || '-'
+  })).sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
+
+  return successResponse(result, result.length + ' quotation di Sampah');
+}
+
 module.exports = {
   readManagerOverview,
   readSalesPerformance,
@@ -462,5 +499,6 @@ module.exports = {
   readActivityLog,
   readSalesList,
   readProjectExplorer,
-  readDeletedProjects
+  readDeletedProjects,
+  readDeletedQuotations
 };
