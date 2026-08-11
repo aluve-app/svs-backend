@@ -57,4 +57,36 @@ async function uploadToCloudinary(env, fileBase64, mimeType, options) {
   return res.json();
 }
 
-module.exports = { uploadToCloudinary };
+/**
+ * Hapus 1 foto di Cloudinary secara permanen (dipakai fitur "Hapus Permanen"
+ * project di Sampah — supaya foto-foto lama tidak menumpuk terus di
+ * Cloudinary dan makan kuota 25 credit/bulan yang sifatnya cumulative).
+ * @param {Object} env
+ * @param {string} publicId - cloudinary_public_id yang tersimpan di dokumen photo
+ */
+async function deleteFromCloudinary(env, publicId) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const paramsToSign = { public_id: publicId, timestamp };
+  const sortedKeys = Object.keys(paramsToSign).sort();
+  const stringToSign = sortedKeys.map((k) => `${k}=${paramsToSign[k]}`).join('&') + env.CLOUDINARY_API_SECRET;
+  const signature = await sha1Hex(stringToSign);
+
+  const form = new FormData();
+  form.append('public_id', publicId);
+  form.append('api_key', env.CLOUDINARY_API_KEY);
+  form.append('timestamp', String(timestamp));
+  form.append('signature', signature);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/destroy`, {
+    method: 'POST',
+    body: form
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error('Gagal hapus foto di Cloudinary: ' + errText);
+  }
+  return res.json();
+}
+
+module.exports = { uploadToCloudinary, deleteFromCloudinary };
