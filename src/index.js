@@ -87,8 +87,8 @@ const ROUTES = {
   listLegacyProjects: { fn: (env, user) => legacyProjectService.listLegacyProjects(env, user) },
   saveLegacyProject: { fn: (env, user, data) => legacyProjectService.saveLegacyProject(env, user, data) },
   deleteLegacyProject: { fn: (env, user, data) => legacyProjectService.deleteLegacyProject(env, user, data) },
-  restoreLegacyProject: { fn: (env, user, data) => legacyProjectService.restoreLegacyProject(env, user, data), roles: ['super_admin'] },
-  permanentlyDeleteLegacyProject: { fn: (env, user, data) => legacyProjectService.permanentlyDeleteLegacyProject(env, user, data), roles: ['super_admin'] },
+  restoreLegacyProjectAdmin: { fn: (env, user, data) => legacyProjectService.restoreLegacyProjectAdmin(env, user, data), roles: ['super_admin'] },
+  permanentlyDeleteLegacyProjectAdmin: { fn: (env, user, data) => legacyProjectService.permanentlyDeleteLegacyProjectAdmin(env, user, data), roles: ['super_admin'] },
   notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) },
 
   // --- Manager Dashboard (BARU) ---
