@@ -25,16 +25,14 @@ const { successResponse, throwError } = require('../lib/responseHelper');
 const ACT_COL = CONFIG.COLLECTIONS.ACTIVITIES;
 const PROJ_COL = CONFIG.COLLECTIONS.PROJECTS;
 
-/** Ambil semua project & activity dalam scope user (business + SELALU dibatasi ke akun sendiri) */
+/** Ambil semua project & activity dalam scope user (business + kepemilikan kalau sales) */
 async function fetchScopedData(env, user) {
-  const projectWhere = [
-    { field: 'business_id', value: user.business_id },
-    { field: 'sales_uid', value: user.uid }
-  ];
-  const activityWhere = [
-    { field: 'business_id', value: user.business_id },
-    { field: 'sales_uid', value: user.uid }
-  ];
+  const projectWhere = [{ field: 'business_id', value: user.business_id }];
+  const activityWhere = [{ field: 'business_id', value: user.business_id }];
+  if (user.role === 'sales') {
+    projectWhere.push({ field: 'sales_uid', value: user.uid });
+    activityWhere.push({ field: 'sales_uid', value: user.uid });
+  }
 
   const [projects, activities] = await Promise.all([
     queryDocs(env, PROJ_COL, { where: projectWhere }),
@@ -81,6 +79,29 @@ function computeNeedsFollowup(projects, activities) {
   return needsFollowup;
 }
 
+/**
+ * Project yang statusnya "Penawaran Siap" TAPI belum ada satu pun
+ * Activity yang dicatat SEJAK stage itu berubah — dipakai sebagai
+ * "notifikasi belum dibaca" bahwa Estimator sudah selesai hitung
+ * quotation-nya (backend notifySalesQuotationSent mengubah
+ * pipeline_stage project langsung, TANPA membuat Activity baru,
+ * jadi ini cara aman mendeteksi "sales belum sempat lihat/respons").
+ * Begitu sales catat 1 Activity apa pun untuk project itu, otomatis
+ * dianggap "sudah dilihat" dan hilang dari daftar ini.
+ */
+function computeOffersReady(projects, activities) {
+  const hasActivityAtOfferStage = {};
+  activities.forEach((a) => {
+    if (a.pipeline_stage_at_this_point === CONFIG.PIPELINE_STAGE.OFFER_READY) {
+      hasActivityAtOfferStage[a.project_id] = true;
+    }
+  });
+
+  return projects
+    .filter((p) => p.pipeline_stage === CONFIG.PIPELINE_STAGE.OFFER_READY && !hasActivityAtOfferStage[p.id])
+    .map((p) => ({ project_id: p.id, project_name: p.project_name, estimated_value: p.estimated_value || '' }));
+}
+
 function periodStartDate(period) {
   const now = new Date();
   const start = new Date(now);
@@ -117,8 +138,9 @@ async function readDashboard(env, user) {
   };
 
   const needsFollowup = computeNeedsFollowup(projects, activities);
+  const offersReady = computeOffersReady(projects, activities);
 
-  return successResponse({ needs_followup: needsFollowup, summary }, 'Dashboard dimuat');
+  return successResponse({ needs_followup: needsFollowup, offers_ready: offersReady, summary }, 'Dashboard dimuat');
 }
 
 async function readNeedsFollowup(env, user) {
