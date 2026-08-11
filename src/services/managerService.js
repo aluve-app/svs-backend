@@ -463,31 +463,35 @@ async function readDeletedProjects(env, user, data) {
  * bersebelahan di halaman Sampah yang sama supaya super_admin punya 1
  * tempat terpusat, walau sumber datanya beda koleksi/skema.
  */
+/**
+ * Daftar quotation Estimator yang sudah di-soft-delete — dibaca dari
+ * legacy_project_data.isDeleted (BUKAN field top-level), karena begitu
+ * cara Estimator sendiri menyimpan status Sampah-nya (lihat catatan
+ * panjang di legacyProjectService.js). Firestore tidak bisa query
+ * langsung ke field bersarang lewat helper queryDocs kita, jadi ambil
+ * semua quotation 1 bisnis dulu, baru filter di memori.
+ *
+ * Catatan: Estimator TIDAK mencatat siapa yang menghapus (cuma isDeleted
+ * + deletedAt), jadi kolom "dihapus oleh" tidak tersedia di sini —
+ * beda dari Sampah project Sales App yang mencatatnya.
+ */
 async function readDeletedQuotations(env, user, data) {
   const businessId = resolveBusinessId(user, data);
 
-  const [quotationsRaw, allUsers] = await Promise.all([
-    queryDocs(env, QUOTATIONS_COL, {
-      where: [
-        { field: 'business_id', value: businessId },
-        { field: 'is_deleted', value: true }
-      ]
-    }),
-    queryDocs(env, USERS_COL, { where: [{ field: 'business_id', value: businessId }] })
-  ]);
+  const allQuotations = await queryDocs(env, QUOTATIONS_COL, {
+    where: [{ field: 'business_id', value: businessId }]
+  });
 
-  const nameByUid = {};
-  allUsers.forEach((u) => { nameByUid[u.id] = u.name; });
+  const deleted = allQuotations.filter((q) => q.legacy_project_data && q.legacy_project_data.isDeleted);
 
-  const result = quotationsRaw.map((q) => ({
+  const result = deleted.map((q) => ({
     quotation_id: q.id,
     project_name: q.project_name || q.client_name || '(Tanpa nama)',
     client_name: q.client_name,
     quotation_number: q.quotation_number,
     status: q.status,
-    deleted_at: q.deleted_at,
-    deleted_by_name: nameByUid[q.deleted_by] || q.deleted_by || '-'
-  })).sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
+    deleted_at: q.legacy_project_data.deletedAt || null
+  })).sort((a, b) => new Date(b.deleted_at || 0) - new Date(a.deleted_at || 0));
 
   return successResponse(result, result.length + ' quotation di Sampah');
 }
