@@ -42,6 +42,8 @@ const ROUTES = {
   createProject: { fn: (env, user, data) => projectService.createProject(env, user, data) },
   updateProject: { fn: (env, user, data) => projectService.updateProject(env, user, data) },
   deleteProject: { fn: (env, user, data) => projectService.deleteProject(env, user, data) },
+  restoreProject: { fn: (env, user, data) => projectService.restoreProject(env, user, data), roles: ['super_admin'] },
+  permanentlyDeleteProject: { fn: (env, user, data) => projectService.permanentlyDeleteProject(env, user, data), roles: ['super_admin'] },
   readProject: { fn: (env, user, data) => projectService.readProject(env, user, data) },
   searchProject: { fn: (env, user, data) => projectService.searchProject(env, user, data) },
   filterProject: { fn: (env, user, data) => projectService.filterProject(env, user, data) },
@@ -95,6 +97,7 @@ const ROUTES = {
   readActivityLog: { fn: (env, user, data) => managerService.readActivityLog(env, user, data), roles: ['manager', 'super_admin'] },
   readSalesList: { fn: (env, user, data) => managerService.readSalesList(env, user, data), roles: ['manager', 'super_admin'] },
   readProjectExplorer: { fn: (env, user, data) => managerService.readProjectExplorer(env, user, data), roles: ['manager', 'super_admin'] },
+  readDeletedProjects: { fn: (env, user, data) => managerService.readDeletedProjects(env, user, data), roles: ['super_admin'] },
 
   // --- Kelola Akun User (BARU) ---
   // Semua route ini khusus super_admin — "tier paling tinggi", sama seperti
@@ -103,7 +106,8 @@ const ROUTES = {
   listUserAccounts: { fn: (env, user, data) => userService.listUserAccounts(env, user, data), roles: ['super_admin'] },
   updateUserRole: { fn: (env, user, data) => userService.updateUserRole(env, user, data), roles: ['super_admin'] },
   setUserStatus: { fn: (env, user, data) => userService.setUserStatus(env, user, data), roles: ['super_admin'] },
-  resetUserPassword: { fn: (env, user, data) => userService.resetUserPassword(env, user, data), roles: ['super_admin'] }
+  resetUserPassword: { fn: (env, user, data) => userService.resetUserPassword(env, user, data), roles: ['super_admin'] },
+  deleteUserAccount: { fn: (env, user, data) => userService.deleteUserAccount(env, user, data), roles: ['super_admin'] }
 };
 
 export default {
