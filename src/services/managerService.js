@@ -394,21 +394,63 @@ async function readProjectExplorer(env, user, data) {
     );
   }
 
-  const result = projects.map((p) => ({
-    project_id: p.id,
-    project_name: p.project_name,
-    location_address: p.location_address,
-    product_type: p.product_type,
-    pipeline_stage: p.pipeline_stage,
-    estimated_value: p.estimated_value,
-    health_status: p.health_status,
-    sales_uid: p.sales_uid,
-    sales_name: salesNameByUid[p.sales_uid] || p.sales_uid,
-    date_created: p.date_created,
-    date_last_activity: p.date_last_activity
-  })).sort((a, b) => new Date(b.date_last_activity) - new Date(a.date_last_activity));
+  const result = projects.map((p) => {
+    const createdDate = new Date(p.date_created);
+    const leadAgeDays = isNaN(createdDate.getTime()) ? null : Math.floor((new Date() - createdDate) / 86400000);
+    return {
+      project_id: p.id,
+      project_name: p.project_name,
+      location_address: p.location_address,
+      product_type: p.product_type,
+      pipeline_stage: p.pipeline_stage,
+      estimated_value: p.estimated_value,
+      health_status: p.health_status,
+      sales_uid: p.sales_uid,
+      sales_name: salesNameByUid[p.sales_uid] || p.sales_uid,
+      date_created: p.date_created,
+      date_last_activity: p.date_last_activity,
+      lead_age_days: leadAgeDays // usia leads — jumlah hari sejak project dibuat
+    };
+  }).sort((a, b) => new Date(b.date_last_activity) - new Date(a.date_last_activity));
 
   return successResponse(result, result.length + ' project ditemukan');
+}
+
+/**
+ * Daftar project yang sudah di-soft-delete (is_deleted=true) untuk halaman
+ * "Sampah" di Admin Console → Kelola Project. Khusus super_admin (dicek
+ * di index.js) — beda dari readProjectExplorer yang cuma untuk project aktif.
+ */
+async function readDeletedProjects(env, user, data) {
+  const businessId = resolveBusinessId(user, data);
+
+  const [projectsRaw, allUsers] = await Promise.all([
+    queryDocs(env, PROJ_COL, {
+      where: [
+        { field: 'business_id', value: businessId },
+        { field: 'is_deleted', value: true }
+      ]
+    }),
+    queryDocs(env, USERS_COL, { where: [{ field: 'business_id', value: businessId }] })
+  ]);
+
+  // Pakai SEMUA user (bukan cuma role sales) supaya nama "dihapus oleh"
+  // tetap kebaca meski yang menghapus manager/super_admin, bukan sales.
+  const nameByUid = {};
+  allUsers.forEach((u) => { nameByUid[u.id] = u.name; });
+
+  const result = projectsRaw.map((p) => ({
+    project_id: p.id,
+    project_name: p.project_name,
+    sales_uid: p.sales_uid,
+    sales_name: nameByUid[p.sales_uid] || p.sales_uid,
+    pipeline_stage: p.pipeline_stage,
+    estimated_value: p.estimated_value,
+    deleted_at: p.deleted_at,
+    deleted_by_name: nameByUid[p.deleted_by] || p.deleted_by || '-'
+  })).sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
+
+  return successResponse(result, result.length + ' project di Sampah');
 }
 
 module.exports = {
@@ -417,5 +459,6 @@ module.exports = {
   readTrendData,
   readActivityLog,
   readSalesList,
-  readProjectExplorer
+  readProjectExplorer,
+  readDeletedProjects
 };

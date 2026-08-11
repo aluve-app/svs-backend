@@ -9,11 +9,12 @@
  */
 
 const { CONFIG } = require('../config');
-const { getDoc, setDoc, updateDoc, queryDocs } = require('../lib/firestoreRest');
+const { getDoc, setDoc, updateDoc, deleteDoc, queryDocs } = require('../lib/firestoreRest');
 const { successResponse, throwError } = require('../lib/responseHelper');
 const { validateCreateProject, validateUpdateProject, validateRequiredFields } = require('../lib/validator');
 const { requireOwnership } = require('../lib/auth');
 const { generateProjectId, generateUniqueId } = require('../lib/idGenerator');
+const { deleteFromCloudinary } = require('../lib/cloudinaryUpload');
 
 const COL = CONFIG.COLLECTIONS.PROJECTS;
 
@@ -90,10 +91,9 @@ async function updateProject(env, user, data) {
 
 /**
  * Hapus project (SOFT DELETE) — ditandai is_deleted, BUKAN dihapus
- * sungguhan dari Firestore. Tujuannya supaya sales bisa "buang" project
- * yang salah input/dibatalkan, tapi datanya masih bisa dipulihkan kalau
- * ternyata keliru — cuma super_admin yang boleh hapus permanen (fitur
- * "Sampah" di Manager Dashboard, menyusul di sesi terpisah).
+ * sungguhan dari Firestore. Muncul di halaman "Sampah" (Manager
+ * Dashboard → Admin Console → Kelola Project), tempat super_admin bisa
+ * PULIHKAN (restoreProject) atau HAPUS PERMANEN (permanentlyDeleteProject).
  *
  * Aturan akses SAMA seperti updateProject: sales cuma boleh hapus
  * project miliknya sendiri (requireOwnership), manager/super_admin bebas.
@@ -113,6 +113,85 @@ async function deleteProject(env, user, data) {
   });
 
   return successResponse({ project_id: data.project_id }, 'Project dipindahkan ke Sampah');
+}
+
+/**
+ * Pulihkan project dari Sampah — kebalikan dari deleteProject.
+ * Khusus super_admin (dicek di index.js).
+ */
+async function restoreProject(env, user, data) {
+  validateRequiredFields(data, ['project_id']);
+
+  const existing = await getDoc(env, COL, data.project_id);
+  if (!existing) throwError('Project tidak ditemukan: ' + data.project_id, 'not-found');
+  if (!existing.is_deleted) throwError('Project ini tidak sedang berada di Sampah', 'invalid-argument');
+
+  await updateDoc(env, COL, data.project_id, {
+    is_deleted: false,
+    deleted_at: null,
+    deleted_by: null,
+    restored_at: new Date(),
+    restored_by: user.uid
+  });
+
+  return successResponse({ project_id: data.project_id }, 'Project berhasil dipulihkan dari Sampah');
+}
+
+/**
+ * Hapus project PERMANEN dari Firestore — TIDAK BISA DIBATALKAN. Hanya
+ * bisa dilakukan pada project yang SUDAH ada di Sampah (is_deleted=true),
+ * supaya tidak ada yang tidak sengaja lompat dari "aktif" langsung ke
+ * "hilang selamanya". Khusus super_admin.
+ *
+ * Ikut dihapus (cascading), supaya tidak ada data "sampah" yang menumpuk
+ * diam-diam di Firestore/Cloudinary:
+ * - Semua activities milik project ini
+ * - Semua photos milik project ini (dokumen Firestore-nya DAN file asli
+ *   di Cloudinary — supaya kuota 25 credit/bulan tidak habis oleh foto
+ *   project yang sudah tidak dipakai)
+ * - Semua link project_contacts (relasi ke kontak) milik project ini
+ *
+ * TIDAK ikut dihapus: dokumen contact itu sendiri — karena 1 kontak
+ * (mis. arsitek yang sama) bisa terhubung ke BEBERAPA project sekaligus,
+ * jadi menghapusnya di sini bisa merusak data project lain yang masih aktif.
+ */
+async function permanentlyDeleteProject(env, user, data) {
+  validateRequiredFields(data, ['project_id']);
+
+  const existing = await getDoc(env, COL, data.project_id);
+  if (!existing) throwError('Project tidak ditemukan: ' + data.project_id, 'not-found');
+  if (!existing.is_deleted) throwError('Project harus dipindahkan ke Sampah dulu sebelum dihapus permanen', 'invalid-argument');
+
+  const ACT_COL = CONFIG.COLLECTIONS.ACTIVITIES;
+  const PHOTO_COL = CONFIG.COLLECTIONS.PHOTOS;
+  const LINK_COL = CONFIG.COLLECTIONS.PROJECT_CONTACTS;
+
+  const [activities, photos, links] = await Promise.all([
+    queryDocs(env, ACT_COL, { where: [{ field: 'project_id', value: data.project_id }] }),
+    queryDocs(env, PHOTO_COL, { where: [{ field: 'project_id', value: data.project_id }] }),
+    queryDocs(env, LINK_COL, { where: [{ field: 'project_id', value: data.project_id }] })
+  ]);
+
+  // Hapus file foto di Cloudinary dulu — best-effort, kalau 1 foto gagal
+  // dihapus di Cloudinary (mis. sudah kehapus manual sebelumnya), proses
+  // tetap lanjut supaya Firestore-nya tetap bersih pada akhirnya.
+  await Promise.all(photos.map(async (p) => {
+    if (p.cloudinary_public_id) {
+      try { await deleteFromCloudinary(env, p.cloudinary_public_id); } catch (err) { /* lanjut meski gagal */ }
+    }
+  }));
+
+  await Promise.all([
+    ...activities.map((a) => deleteDoc(env, ACT_COL, a.id)),
+    ...photos.map((p) => deleteDoc(env, PHOTO_COL, p.id)),
+    ...links.map((l) => deleteDoc(env, LINK_COL, l.id)),
+    deleteDoc(env, COL, data.project_id)
+  ]);
+
+  return successResponse(
+    { project_id: data.project_id },
+    'Project dihapus permanen beserta ' + activities.length + ' aktivitas & ' + photos.length + ' foto'
+  );
 }
 
 async function readProject(env, user, data) {
@@ -200,4 +279,7 @@ async function recalculateProjectHealth(env, projectId) {
   await updateDoc(env, COL, projectId, { health_status: healthStatus });
 }
 
-module.exports = { createProject, updateProject, deleteProject, readProject, searchProject, filterProject, recalculateProjectHealth };
+module.exports = {
+  createProject, updateProject, deleteProject, restoreProject, permanentlyDeleteProject,
+  readProject, searchProject, filterProject, recalculateProjectHealth
+};
