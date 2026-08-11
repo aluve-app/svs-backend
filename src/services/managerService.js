@@ -446,6 +446,8 @@ async function readDeletedProjects(env, user, data) {
     sales_name: nameByUid[p.sales_uid] || p.sales_uid,
     pipeline_stage: p.pipeline_stage,
     estimated_value: p.estimated_value,
+    location_address: p.location_address,
+    lead_source: p.lead_source,
     deleted_at: p.deleted_at,
     deleted_by_name: nameByUid[p.deleted_by] || p.deleted_by || '-'
   })).sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
