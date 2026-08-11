@@ -87,6 +87,8 @@ const ROUTES = {
   listLegacyProjects: { fn: (env, user) => legacyProjectService.listLegacyProjects(env, user) },
   saveLegacyProject: { fn: (env, user, data) => legacyProjectService.saveLegacyProject(env, user, data) },
   deleteLegacyProject: { fn: (env, user, data) => legacyProjectService.deleteLegacyProject(env, user, data) },
+  restoreLegacyProject: { fn: (env, user, data) => legacyProjectService.restoreLegacyProject(env, user, data), roles: ['super_admin'] },
+  permanentlyDeleteLegacyProject: { fn: (env, user, data) => legacyProjectService.permanentlyDeleteLegacyProject(env, user, data), roles: ['super_admin'] },
   notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) },
 
   // --- Manager Dashboard (BARU) ---
@@ -98,6 +100,7 @@ const ROUTES = {
   readSalesList: { fn: (env, user, data) => managerService.readSalesList(env, user, data), roles: ['manager', 'super_admin'] },
   readProjectExplorer: { fn: (env, user, data) => managerService.readProjectExplorer(env, user, data), roles: ['manager', 'super_admin'] },
   readDeletedProjects: { fn: (env, user, data) => managerService.readDeletedProjects(env, user, data), roles: ['super_admin'] },
+  readDeletedQuotations: { fn: (env, user, data) => managerService.readDeletedQuotations(env, user, data), roles: ['super_admin'] },
 
   // --- Kelola Akun User (BARU) ---
   // Semua route ini khusus super_admin — "tier paling tinggi", sama seperti
