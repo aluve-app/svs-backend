@@ -20,8 +20,27 @@ const { successResponse, throwError } = require('../lib/responseHelper');
 const COL = CONFIG.COLLECTIONS.PRICE_CATALOGS;
 const HISTORY_COL = CONFIG.COLLECTIONS.PRICE_HISTORY;
 
+/**
+ * PATCH BUSINESS SWITCHER + KEAMANAN: sebelumnya business_id yang
+ * dikirim di payload langsung dipakai apa adanya, TANPA dicek apakah
+ * user memang berhak lihat/ubah data bisnis itu — siapa pun yang login
+ * bisa saja isi business_id bisnis lain dan baca datanya. Sekarang
+ * divalidasi dulu lewat resolveBusinessId (sama seperti di
+ * legacyProjectService.js): boleh pindah bisnis HANYA kalau memang ada
+ * di user.business_ids, atau dia super_admin.
+ */
+function resolveBusinessId(user, requestedBusinessId) {
+  if (!requestedBusinessId) return user.business_id;
+  if (requestedBusinessId === user.business_id) return requestedBusinessId;
+  if (user.role === 'super_admin') return requestedBusinessId;
+  if (Array.isArray(user.business_ids) && user.business_ids.includes(requestedBusinessId)) {
+    return requestedBusinessId;
+  }
+  return user.business_id;
+}
+
 async function readPriceCatalog(env, user, data) {
-  const businessId = data.business_id || user.business_id;
+  const businessId = resolveBusinessId(user, data.business_id);
   if (!businessId) throwError('business_id tidak diketahui', 'invalid-argument');
 
   const doc = await getDoc(env, COL, businessId);
@@ -42,7 +61,7 @@ async function readPriceCatalog(env, user, data) {
  * cukup ringkasan + siapa + kapan).
  */
 async function updatePriceCatalog(env, user, data) {
-  const businessId = data.business_id || user.business_id;
+  const businessId = resolveBusinessId(user, data.business_id);
   if (!businessId || !data.catalog) {
     throwError('business_id dan catalog wajib diisi', 'invalid-argument');
   }
