@@ -50,15 +50,24 @@ function resolveBusinessId(user, requestedBusinessId) {
 
 /** Mengubah 1 dokumen Firestore jadi objek "Project" persis bentuk app lama. */
 function toLegacyProject(doc) {
+  // Field revisi/kunci SELALU diambil dari envelope (bukan dari
+  // legacy_project_data) — envelope-lah sumber kebenaran untuk ini,
+  // supaya tidak bisa "ketimpa" tidak sengaja waktu Estimator save.
+  const revisionOverlay = {
+    revisionNumber: doc.revision_number || 1,
+    isLocked: !!doc.is_locked,
+    rootProjectId: doc.root_project_id || doc.id
+  };
+
   if (doc.legacy_project_data) {
     // Sudah pernah disimpan lewat app ini — kembalikan apa adanya,
     // hanya pastikan projectId selalu sinkron dengan Firestore doc id.
-    return Object.assign({}, doc.legacy_project_data, { projectId: doc.id });
+    return Object.assign({}, doc.legacy_project_data, { projectId: doc.id }, revisionOverlay);
   }
   // Belum pernah dibuka di app ini (misal quotation auto-dibuat oleh
   // Sales App saat Pipeline Stage jadi "Perlu Estimasi Harga") — susun
   // objek Project kosong dari field ringkasan yang sudah ada.
-  return {
+  return Object.assign({
     projectId: doc.id,
     quotationNumber: doc.quotation_number || '',
     projectDate: (doc.created_at ? new Date(doc.created_at).toISOString() : new Date().toISOString()).slice(0, 10),
@@ -74,7 +83,7 @@ function toLegacyProject(doc) {
     items: Array.isArray(doc.items) ? doc.items : [],
     projectDiscount: doc.project_discount || { type: 'percent', value: 0 },
     _salesProjectId: doc.project_id || '' // dipakai frontend untuk tahu ini terhubung ke Sales App atau tidak
-  };
+  }, revisionOverlay);
 }
 
 /** Daftar seluruh "Project" (quotation) milik business_id user — dipetakan ke bentuk app lama. */
@@ -98,6 +107,10 @@ async function saveLegacyProject(env, user, data) {
   if (!project.projectId) throwError('projectId wajib ada di objek project', 'invalid-argument');
 
   const existing = await getDoc(env, COL, project.projectId);
+  if (existing && existing.is_locked) {
+    throwError('Quotation ini sudah dikunci (revisi lama) — tidak bisa diedit lagi. Buka revisi terbaru untuk melanjutkan.', 'failed-precondition');
+  }
+
   const now = new Date();
   const businessId = existing ? existing.business_id : resolveBusinessId(user, data.business_id);
 
@@ -106,6 +119,8 @@ async function saveLegacyProject(env, user, data) {
     project_id: (existing && existing.project_id) || '', // link ke project Sales App, kalau ada — tidak pernah diubah dari sini
     quotation_number: project.quotationNumber || '',
     revision_number: (existing && existing.revision_number) || 1,
+    root_project_id: (existing && existing.root_project_id) || project.projectId,
+    is_locked: false,
     client_name: project.clientName || '',
     project_name: project.projectName || '',
     location: project.location || '',
@@ -123,6 +138,68 @@ async function saveLegacyProject(env, user, data) {
 
   await setDoc(env, COL, project.projectId, doc);
   return successResponse({ project_id: project.projectId }, 'Project berhasil disimpan');
+}
+
+/**
+ * FITUR REVISI: bikin SALINAN quotation ini sebagai dokumen BARU (revisi
+ * berikutnya), lalu KUNCI dokumen lama (is_locked: true) supaya tidak
+ * bisa diedit lagi — jadi berfungsi sebagai riwayat/history permanen.
+ * Dipanggil manual lewat tombol "Buat Revisi Baru" di halaman Detail
+ * Project (bukan otomatis).
+ */
+async function createQuotationRevision(env, user, data) {
+  validateRequiredFields(data, ['project_id']);
+
+  const source = await getDoc(env, COL, data.project_id);
+  if (!source) throwError('Quotation tidak ditemukan: ' + data.project_id, 'not-found');
+
+  const { generateQuotationId, generateUniqueId } = require('../lib/idGenerator');
+  const newId = await generateUniqueId(generateQuotationId, env, COL);
+  const now = new Date();
+
+  const rootProjectId = source.root_project_id || source.id;
+  const newRevisionNumber = (source.revision_number || 1) + 1;
+
+  const newLegacyData = Object.assign({}, source.legacy_project_data, {
+    projectId: newId,
+    status: 'draft' // revisi baru selalu mulai dari draft, meski induknya sudah 'sent'
+  });
+
+  const newDoc = {
+    business_id: source.business_id,
+    project_id: source.project_id || '', // tetap terhubung ke project Sales App yang sama, kalau ada
+    quotation_number: source.quotation_number || '',
+    revision_number: newRevisionNumber,
+    root_project_id: rootProjectId,
+    is_locked: false,
+    client_name: source.client_name || '',
+    project_name: source.project_name || '',
+    location: source.location || '',
+    customer_phone: source.customer_phone || '',
+    sales_rep: source.sales_rep || '',
+    sales_uid: source.sales_uid || '',
+    status: CONFIG.QUOTATION_STATUS.DRAFT,
+    items: source.items || [],
+    project_discount: source.project_discount || { type: 'percent', value: 0 },
+    legacy_project_data: newLegacyData,
+    created_by: user.uid,
+    created_at: now,
+    updated_at: now
+  };
+
+  await setDoc(env, COL, newId, newDoc);
+
+  // Kunci dokumen sumber — jadi arsip/history, tidak bisa diedit lagi.
+  await setDoc(env, COL, data.project_id, Object.assign({}, source, {
+    is_locked: true,
+    root_project_id: rootProjectId,
+    updated_at: now
+  }));
+
+  return successResponse(
+    { project_id: newId, revision_number: newRevisionNumber },
+    'Revisi ' + newRevisionNumber + ' berhasil dibuat. Revisi sebelumnya dikunci sebagai riwayat.'
+  );
 }
 
 async function deleteLegacyProject(env, user, data) {
@@ -169,4 +246,4 @@ async function notifySalesQuotationSent(env, user, data) {
   return successResponse({ notified: true }, 'Sales App sudah diberi tahu quotation ini terkirim');
 }
 
-module.exports = { listLegacyProjects, saveLegacyProject, deleteLegacyProject, notifySalesQuotationSent };
+module.exports = { listLegacyProjects, saveLegacyProject, deleteLegacyProject, notifySalesQuotationSent, createQuotationRevision };
