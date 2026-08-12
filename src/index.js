@@ -81,7 +81,8 @@ const ROUTES = {
   listLegacyProjects: { fn: (env, user, data) => legacyProjectService.listLegacyProjects(env, user, data) },
   saveLegacyProject: { fn: (env, user, data) => legacyProjectService.saveLegacyProject(env, user, data) },
   deleteLegacyProject: { fn: (env, user, data) => legacyProjectService.deleteLegacyProject(env, user, data) },
-  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) }
+  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) },
+  createQuotationRevision: { fn: (env, user, data) => legacyProjectService.createQuotationRevision(env, user, data) }
 };
 
 export default {
