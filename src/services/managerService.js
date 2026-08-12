@@ -38,15 +38,10 @@ function resolveBusinessId(user, data) {
 
 /** Ambil semua project, activity, dan daftar sales (dari users) untuk 1 business_id */
 async function fetchManagerScopedData(env, businessId) {
-  const [projectsRaw, activities, salesUsers] = await Promise.all([
+  const [projectsRaw, activities, businessUsers] = await Promise.all([
     queryDocs(env, PROJ_COL, { where: [{ field: 'business_id', value: businessId }] }),
     queryDocs(env, ACT_COL, { where: [{ field: 'business_id', value: businessId }] }),
-    queryDocs(env, USERS_COL, {
-      where: [
-        { field: 'business_id', value: businessId },
-        { field: 'role', value: 'sales' }
-      ]
-    })
+    queryDocs(env, USERS_COL, { where: [{ field: 'business_id', value: businessId }] })
   ]);
 
   // Project yang sudah di-soft-delete (fitur "Hapus Project" di Admin
@@ -54,10 +49,18 @@ async function fetchManagerScopedData(env, businessId) {
   // sama seperti perilaku searchProject/filterProject di Sales App.
   const projects = projectsRaw.filter((p) => !p.is_deleted);
 
+  // Ambil role 'sales' DAN 'manager' — manager kadang dobel jadi sales
+  // (input kunjungan sendiri lewat Sales App juga), jadi tetap perlu
+  // tampil dengan nama, bukan uid mentah, di ranking performa & explorer.
+  // 'estimator'/'super_admin' sengaja tidak diikutkan di ranking performa
+  // (biar tabelnya tidak penuh baris 0 dari akun yang memang tidak
+  // pernah input kunjungan), tapi TETAP dimasukkan ke salesNameByUid di
+  // bawah supaya nama mereka tetap kebaca di kolom "Sales" kalau ternyata
+  // ada project/activity atas nama mereka.
   const salesNameByUid = {};
-  salesUsers.forEach((s) => { salesNameByUid[s.id] = s.name; });
+  businessUsers.forEach((u) => { salesNameByUid[u.id] = u.name; });
 
-  return { projects, activities, salesNameByUid };
+  return { projects, activities, salesNameByUid, salesAndManagerUids: businessUsers.filter((u) => u.role === 'sales' || u.role === 'manager').map((u) => u.id) };
 }
 
 /**
@@ -65,11 +68,13 @@ async function fetchManagerScopedData(env, businessId) {
  * yang SUDAH difilter (dipakai bersama readManagerOverview & readSalesPerformance,
  * supaya logikanya konsisten di 2 tempat — sama seperti versi Apps Script).
  */
-function computeSalesPerformance(activities, projects, salesNameByUid) {
-  // Mulai dari SEMUA sales terdaftar (salesNameByUid), bukan cuma yang
-  // kebetulan sudah punya project/aktivitas — supaya sales yang belum
-  // pernah input apa pun tetap muncul dengan angka 0.
-  const uids = new Set(Object.keys(salesNameByUid));
+function computeSalesPerformance(activities, projects, salesNameByUid, seedUids) {
+  // Mulai dari sales+manager yang terdaftar (seedUids), bukan cuma yang
+  // kebetulan sudah punya project/aktivitas — supaya orang yang belum
+  // pernah input apa pun tetap muncul dengan angka 0. Sengaja tidak pakai
+  // SEMUA uid di salesNameByUid supaya super_admin/estimator (yang memang
+  // tidak input kunjungan) tidak numpuk di ranking sebagai baris kosong.
+  const uids = new Set(seedUids || Object.keys(salesNameByUid));
   activities.forEach((a) => { if (a.sales_uid) uids.add(a.sales_uid); });
   projects.forEach((p) => { if (p.sales_uid) uids.add(p.sales_uid); });
 
@@ -112,7 +117,7 @@ function computeSalesPerformance(activities, projects, salesNameByUid) {
  */
 async function readManagerOverview(env, user, data) {
   const businessId = resolveBusinessId(user, data);
-  const { projects: allProjects, activities: allActivities, salesNameByUid } =
+  const { projects: allProjects, activities: allActivities, salesNameByUid, salesAndManagerUids } =
     await fetchManagerScopedData(env, businessId);
 
   let projects = allProjects;
@@ -175,7 +180,7 @@ async function readManagerOverview(env, user, data) {
     leadSourceBreakdown[source] = (leadSourceBreakdown[source] || 0) + 1;
   });
 
-  const salesRanking = computeSalesPerformance(activities, projects, salesNameByUid);
+  const salesRanking = computeSalesPerformance(activities, projects, salesNameByUid, salesAndManagerUids);
 
   const staleProjects = projects
     .filter((p) => p.health_status === 'Stale')
@@ -249,7 +254,7 @@ async function readManagerOverview(env, user, data) {
 /** Halaman Performa Sales — versi lengkap (tanpa batas jumlah) dari ranking di Overview */
 async function readSalesPerformance(env, user, data) {
   const businessId = resolveBusinessId(user, data);
-  const { projects, activities: allActivities, salesNameByUid } = await fetchManagerScopedData(env, businessId);
+  const { projects, activities: allActivities, salesNameByUid, salesAndManagerUids } = await fetchManagerScopedData(env, businessId);
 
   let activities = allActivities;
   if (data.date_from) activities = activities.filter((a) => new Date(a.timestamp) >= new Date(data.date_from));
@@ -259,7 +264,7 @@ async function readSalesPerformance(env, user, data) {
     activities = activities.filter((a) => new Date(a.timestamp) <= toDate);
   }
 
-  const performance = computeSalesPerformance(activities, projects, salesNameByUid);
+  const performance = computeSalesPerformance(activities, projects, salesNameByUid, salesAndManagerUids);
   return successResponse(performance, 'Data performa sales berhasil dimuat');
 }
 
@@ -364,16 +369,13 @@ async function readActivityLog(env, user, data) {
   );
 }
 
-/** Daftar sales untuk dropdown filter (role=sales, per business_id) */
+/** Daftar sales+manager untuk dropdown filter (per business_id) */
 async function readSalesList(env, user, data) {
   const businessId = resolveBusinessId(user, data);
-  const salesUsers = await queryDocs(env, USERS_COL, {
-    where: [
-      { field: 'business_id', value: businessId },
-      { field: 'role', value: 'sales' }
-    ]
-  });
-  const result = salesUsers.map((s) => ({ sales_uid: s.id, sales_name: s.name, status: s.status }));
+  const salesUsers = await queryDocs(env, USERS_COL, { where: [{ field: 'business_id', value: businessId }] });
+  const result = salesUsers
+    .filter((s) => s.role === 'sales' || s.role === 'manager')
+    .map((s) => ({ sales_uid: s.id, sales_name: s.name, status: s.status }));
   return successResponse(result, 'Daftar sales berhasil dimuat');
 }
 
