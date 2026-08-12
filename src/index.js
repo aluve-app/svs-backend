@@ -33,17 +33,12 @@ const quotationService = require('./services/quotationService');
 const priceCatalogService = require('./services/priceCatalogService');
 const estimatorSettingsService = require('./services/estimatorSettingsService');
 const legacyProjectService = require('./services/legacyProjectService');
-const managerService = require('./services/managerService');
-const userService = require('./services/userService');
 
 // Daftar route: nama endpoint -> handler
 // (requiresRole opsional, dicek SETELAH requireAuth)
 const ROUTES = {
   createProject: { fn: (env, user, data) => projectService.createProject(env, user, data) },
   updateProject: { fn: (env, user, data) => projectService.updateProject(env, user, data) },
-  deleteProject: { fn: (env, user, data) => projectService.deleteProject(env, user, data) },
-  restoreProject: { fn: (env, user, data) => projectService.restoreProject(env, user, data), roles: ['super_admin'] },
-  permanentlyDeleteProject: { fn: (env, user, data) => projectService.permanentlyDeleteProject(env, user, data), roles: ['super_admin'] },
   readProject: { fn: (env, user, data) => projectService.readProject(env, user, data) },
   searchProject: { fn: (env, user, data) => projectService.searchProject(env, user, data) },
   filterProject: { fn: (env, user, data) => projectService.filterProject(env, user, data) },
@@ -81,36 +76,12 @@ const ROUTES = {
 
   readEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.readEstimatorSettings(env, user, data) },
   updateEstimatorSettings: { fn: (env, user, data) => estimatorSettingsService.updateEstimatorSettings(env, user, data), roles: ['super_admin'] },
-  uploadEstimatorLogo: { fn: (env, user, data) => estimatorSettingsService.uploadEstimatorLogo(env, user, data), roles: ['super_admin'] },
 
   // --- Legacy Project Estimator (port langsung app lama) ---
-  listLegacyProjects: { fn: (env, user) => legacyProjectService.listLegacyProjects(env, user) },
+  listLegacyProjects: { fn: (env, user, data) => legacyProjectService.listLegacyProjects(env, user, data) },
   saveLegacyProject: { fn: (env, user, data) => legacyProjectService.saveLegacyProject(env, user, data) },
   deleteLegacyProject: { fn: (env, user, data) => legacyProjectService.deleteLegacyProject(env, user, data) },
-  restoreLegacyProjectAdmin: { fn: (env, user, data) => legacyProjectService.restoreLegacyProjectAdmin(env, user, data), roles: ['super_admin'] },
-  permanentlyDeleteLegacyProjectAdmin: { fn: (env, user, data) => legacyProjectService.permanentlyDeleteLegacyProjectAdmin(env, user, data), roles: ['super_admin'] },
-  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) },
-
-  // --- Manager Dashboard (BARU) ---
-  // Semua route ini khusus manager/super_admin — Sales App tidak pernah memanggilnya.
-  readManagerOverview: { fn: (env, user, data) => managerService.readManagerOverview(env, user, data), roles: ['manager', 'super_admin'] },
-  readSalesPerformance: { fn: (env, user, data) => managerService.readSalesPerformance(env, user, data), roles: ['manager', 'super_admin'] },
-  readTrendData: { fn: (env, user, data) => managerService.readTrendData(env, user, data), roles: ['manager', 'super_admin'] },
-  readActivityLog: { fn: (env, user, data) => managerService.readActivityLog(env, user, data), roles: ['manager', 'super_admin'] },
-  readSalesList: { fn: (env, user, data) => managerService.readSalesList(env, user, data), roles: ['manager', 'super_admin'] },
-  readProjectExplorer: { fn: (env, user, data) => managerService.readProjectExplorer(env, user, data), roles: ['manager', 'super_admin'] },
-  readDeletedProjects: { fn: (env, user, data) => managerService.readDeletedProjects(env, user, data), roles: ['super_admin'] },
-  readDeletedQuotations: { fn: (env, user, data) => managerService.readDeletedQuotations(env, user, data), roles: ['super_admin'] },
-
-  // --- Kelola Akun User (BARU) ---
-  // Semua route ini khusus super_admin — "tier paling tinggi", sama seperti
-  // aturan edit Price Catalog/Estimator Settings di Estimator.
-  createUserAccount: { fn: (env, user, data) => userService.createUserAccount(env, user, data), roles: ['super_admin'] },
-  listUserAccounts: { fn: (env, user, data) => userService.listUserAccounts(env, user, data), roles: ['super_admin'] },
-  updateUserRole: { fn: (env, user, data) => userService.updateUserRole(env, user, data), roles: ['super_admin'] },
-  setUserStatus: { fn: (env, user, data) => userService.setUserStatus(env, user, data), roles: ['super_admin'] },
-  resetUserPassword: { fn: (env, user, data) => userService.resetUserPassword(env, user, data), roles: ['super_admin'] },
-  deleteUserAccount: { fn: (env, user, data) => userService.deleteUserAccount(env, user, data), roles: ['super_admin'] }
+  notifySalesQuotationSent: { fn: (env, user, data) => legacyProjectService.notifySalesQuotationSent(env, user, data) }
 };
 
 export default {
