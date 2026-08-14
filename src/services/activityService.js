@@ -39,7 +39,8 @@ async function createActivity(env, user, data) {
     activity_type: data.activity_type,
     activity_note: data.activity_note,
     pipeline_stage_at_this_point: data.pipeline_stage,
-    next_followup_date: data.next_followup_date,
+    temperature: data.temperature || '', // sempat KETIMPA sesi lain, dikembalikan (Ags 2026)
+    next_followup_date: data.next_followup_date || '',
     sales_uid: user.uid,
     business_id: user.business_id,
     timestamp: now,
