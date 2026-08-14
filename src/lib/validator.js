@@ -33,13 +33,16 @@ function validateUpdateProject(data) {
 }
 
 function validateCreateActivity(data) {
-  validateRequiredFields(data, [
-    'project_id',
-    'activity_type',
-    'activity_note',
-    'pipeline_stage',
-    'next_followup_date'
-  ]);
+  const requiredFields = ['project_id', 'activity_type', 'activity_note', 'pipeline_stage'];
+
+  // Follow-up hanya wajib kalau project MASIH berjalan (bukan Won/Lost) —
+  // begitu project sudah closing, tidak ada lagi jadwal follow-up berikutnya.
+  // (Catatan Ags 2026: baris ini sempat KETIMPA oleh sesi lain yang menulis
+  // ulang file ini dari salinan lama — dikembalikan lagi di sini.)
+  const isClosingStage = data.pipeline_stage === 'Won' || data.pipeline_stage === 'Lost';
+  if (!isClosingStage) requiredFields.push('next_followup_date');
+
+  validateRequiredFields(data, requiredFields);
 
   if (data.pipeline_stage === 'Lost' && !data.lost_reason) {
     throwError('Alasan Lost wajib diisi ketika status project diubah menjadi Lost', 'invalid-argument');
