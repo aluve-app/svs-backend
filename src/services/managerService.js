@@ -64,6 +64,24 @@ async function fetchManagerScopedData(env, businessId) {
 }
 
 /**
+ * Suhu lead TERKINI tiap project = suhu dari activity paling baru yang
+ * sudah mengisi field `temperature` (Cold/Warm/Hot). Dipakai bareng di
+ * Overview (breakdown + filter), Project Explorer (kolom + filter), dan
+ * tidak dipakai di Log Aktivitas (Log filter langsung pakai temperature
+ * milik activity itu sendiri, bukan suhu "terkini" project).
+ * @returns {Object} map project_id -> 'Cold'|'Warm'|'Hot'
+ */
+function getLatestTemperatureByProject(activities) {
+  const sorted = activities.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const result = {};
+  sorted.forEach((a) => {
+    if (!a.temperature) return;
+    if (!result[a.project_id]) result[a.project_id] = a.temperature;
+  });
+  return result;
+}
+
+/**
  * Helper internal: performa tiap sales dari kumpulan activities & projects
  * yang SUDAH difilter (dipakai bersama readManagerOverview & readSalesPerformance,
  * supaya logikanya konsisten di 2 tempat — sama seperti versi Apps Script).
@@ -120,11 +138,14 @@ async function readManagerOverview(env, user, data) {
   const { projects: allProjects, activities: allActivities, salesNameByUid, salesAndManagerUids } =
     await fetchManagerScopedData(env, businessId);
 
+  const latestTempByProject = getLatestTemperatureByProject(allActivities);
+
   let projects = allProjects;
   if (data.sales_uid) projects = projects.filter((p) => p.sales_uid === data.sales_uid);
   if (data.pipeline_stage) projects = projects.filter((p) => p.pipeline_stage === data.pipeline_stage);
   if (data.product_type) projects = projects.filter((p) => String(p.product_type || '').indexOf(data.product_type) !== -1);
   if (data.lead_source) projects = projects.filter((p) => p.lead_source === data.lead_source);
+  if (data.temperature) projects = projects.filter((p) => latestTempByProject[p.id] === data.temperature);
 
   let activities = allActivities;
   if (data.sales_uid) activities = activities.filter((a) => a.sales_uid === data.sales_uid);
@@ -179,6 +200,17 @@ async function readManagerOverview(env, user, data) {
     const source = p.lead_source || 'Tidak Diisi';
     leadSourceBreakdown[source] = (leadSourceBreakdown[source] || 0) + 1;
   });
+
+  // Suhu Leads: hanya dihitung dari project yang masih aktif (bukan
+  // Won/Lost) — leads yang sudah closed tidak relevan lagi ditanya
+  // "sepanas apa" karena sudah tidak dikejar.
+  const temperatureBreakdown = {};
+  projects
+    .filter((p) => p.pipeline_stage !== CONFIG.PIPELINE_STAGE.WON && p.pipeline_stage !== CONFIG.PIPELINE_STAGE.LOST)
+    .forEach((p) => {
+      const temp = latestTempByProject[p.id] || 'Belum Diisi';
+      temperatureBreakdown[temp] = (temperatureBreakdown[temp] || 0) + 1;
+    });
 
   const salesRanking = computeSalesPerformance(activities, projects, salesNameByUid, salesAndManagerUids);
 
@@ -244,6 +276,7 @@ async function readManagerOverview(env, user, data) {
     lost_reasons: lostReasons,
     product_breakdown: productBreakdown,
     lead_source_breakdown: leadSourceBreakdown,
+    temperature_breakdown: temperatureBreakdown,
     sales_ranking: salesRanking,
     stale_projects: staleProjects,
     followups_today: followupsToday,
@@ -339,6 +372,7 @@ async function readActivityLog(env, user, data) {
   let activities = allActivities;
   if (data.sales_uid) activities = activities.filter((a) => a.sales_uid === data.sales_uid);
   if (data.activity_type) activities = activities.filter((a) => a.activity_type === data.activity_type);
+  if (data.temperature) activities = activities.filter((a) => a.temperature === data.temperature);
   if (data.date_from) activities = activities.filter((a) => new Date(a.timestamp) >= new Date(data.date_from));
   if (data.date_to) {
     const toDate = new Date(data.date_to);
@@ -360,6 +394,7 @@ async function readActivityLog(env, user, data) {
     activity_type: a.activity_type,
     note: a.activity_note,
     pipeline_stage: a.pipeline_stage_at_this_point,
+    temperature: a.temperature || null,
     timestamp: a.timestamp
   }));
 
@@ -382,13 +417,15 @@ async function readSalesList(env, user, data) {
 /** Project Explorer: daftar project + filter pencarian, untuk tabel eksplorasi */
 async function readProjectExplorer(env, user, data) {
   const businessId = resolveBusinessId(user, data);
-  const { projects: allProjects, salesNameByUid } = await fetchManagerScopedData(env, businessId);
+  const { projects: allProjects, activities: allActivities, salesNameByUid } = await fetchManagerScopedData(env, businessId);
+  const latestTempByProject = getLatestTemperatureByProject(allActivities);
 
   let projects = allProjects;
   if (data.sales_uid) projects = projects.filter((p) => p.sales_uid === data.sales_uid);
   if (data.pipeline_stage) projects = projects.filter((p) => p.pipeline_stage === data.pipeline_stage);
   if (data.product_type) projects = projects.filter((p) => String(p.product_type || '').indexOf(data.product_type) !== -1);
   if (data.lead_source) projects = projects.filter((p) => p.lead_source === data.lead_source);
+  if (data.temperature) projects = projects.filter((p) => latestTempByProject[p.id] === data.temperature);
   if (data.keyword) {
     const kw = String(data.keyword).toLowerCase();
     projects = projects.filter((p) =>
@@ -412,7 +449,8 @@ async function readProjectExplorer(env, user, data) {
       sales_name: salesNameByUid[p.sales_uid] || p.sales_uid,
       date_created: p.date_created,
       date_last_activity: p.date_last_activity,
-      lead_age_days: leadAgeDays // usia leads — jumlah hari sejak project dibuat
+      lead_age_days: leadAgeDays, // usia leads — jumlah hari sejak project dibuat
+      current_temperature: latestTempByProject[p.id] || null // suhu dari activity terakhir yang mengisinya
     };
   }).sort((a, b) => new Date(b.date_last_activity) - new Date(a.date_last_activity));
 
